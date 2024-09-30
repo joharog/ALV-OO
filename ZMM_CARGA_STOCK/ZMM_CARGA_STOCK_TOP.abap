@@ -12,9 +12,10 @@ TYPES:
 BEGIN OF ty_carga,
 
 *** Info
-  select TYPE char1,
-  status TYPE char4,
-  log    TYPE char255,
+  select         TYPE     char1,
+  sel_pos        TYPE     char10,
+  status         TYPE     char4,
+  log            TYPE     char255,
 
 *** Nivel de Cabecera | GOODSMVT_HEADER
   pstng_date     TYPE     budat,         "Fecha de contabilización en el documento
@@ -87,6 +88,9 @@ DATA:
       gti_file_table TYPE filetable,
       gti_carga      TYPE STANDARD TABLE OF ty_carga.
 
+DATA:
+       lt_styletab TYPE lvc_t_styl,
+       ls_stylerow TYPE lvc_s_styl.
 
 *----------------------------------------------------------------------*
 *                 F I E L D   -   S Y M B O L S
