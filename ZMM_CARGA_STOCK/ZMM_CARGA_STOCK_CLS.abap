@@ -116,8 +116,8 @@ CLASS cls_alv_oo IMPLEMENTATION.
         WHEN 8. gs_data-entry_uom   = gs_excel-value.
         WHEN 9. gs_data-amount_lc   = gs_excel-value.
         WHEN 10. gs_data-waers      = gs_excel-value.
-        WHEN 11. gs_data-vprsv      = gs_excel-value.
-        WHEN 12. gs_data-mlast      = gs_excel-value.
+*        WHEN 11. gs_data-vprsv      = gs_excel-value.  "Removido 15.08.2024
+*        WHEN 12. gs_data-mlast      = gs_excel-value.  "Removido 15.08.2024
         WHEN 13. gs_data-header_txt = gs_excel-value.
         WHEN 14. gs_data-stck_type  = gs_excel-value.
         WHEN 15. gs_data-spec_stock = gs_excel-value.
@@ -362,6 +362,7 @@ CLASS cls_alv_oo IMPLEMENTATION.
 
   METHOD: set_layout.
     wa_layout-stylefname = 'FIELD_STYLE'.
+    wa_layout-box_fname = 'SELECT'.
   ENDMETHOD.                    "set_layout
 
 *  METHOD: mapping_bapi.
@@ -409,59 +410,49 @@ CLASS cls_eventos IMPLEMENTATION.
 
   METHOD handle_toolbar.
 
-*    DATA: wa_button TYPE stb_button.
-*
-*    wa_button-function = 'UPDATE'.
-*    wa_button-icon     = icon_refresh.
-*    wa_button-text     = 'Actualizar'.
-*    wa_button-quickinfo = 'Actualizar Listado'.
-**    wa_button-disabled = space.
-*    APPEND wa_button TO e_object->mt_toolbar.
-*
-*    wa_button-function = 'CHANGE'.
-*    wa_button-icon     = icon_mass_change.
-*    wa_button-text     = 'Act. Masiva'.
-*    wa_button-quickinfo = 'Actualizacion Masiva'.
-*    APPEND wa_button TO e_object->mt_toolbar.
-*
-*    wa_button-function = 'SAVE'.
-*    wa_button-icon     = icon_system_save.
-*    wa_button-text     = 'Guardar'.
-*    wa_button-quickinfo = 'Guardar Cambios'.
-*    APPEND wa_button TO e_object->mt_toolbar.
+    DATA: ls_toolbar TYPE stb_button.
+
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'SEL_ALL' TO ls_toolbar-function.
+    MOVE icon_select_all TO ls_toolbar-icon.
+    MOVE 'Marcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 3. " !!!
+
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'DES_ALL' TO ls_toolbar-function.
+    MOVE icon_deselect_all TO ls_toolbar-icon.
+    MOVE 'Desmarcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 4. " !!!
+
+    CLEAR ls_toolbar.
+    MOVE 3 TO ls_toolbar-butn_type.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 5. " !!!
+
 
   ENDMETHOD.                    "handle_toolbar
 
   METHOD handle_user_command.
 
-*    DATA: ls_ekpo  TYPE ekpo,
-*          ls_t005t TYPE t005t,
-*          ls_eket  TYPE eket,
-*          ls_dlhd  TYPE wrf_pscd_dlhd.
-*
-*    CASE e_ucomm.
-*      WHEN 'UPDATE'.
-*
-*        DATA ls_ref1 TYPE REF TO cl_gui_alv_grid .
-*
-*        CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
-*          IMPORTING
-*            e_grid = ls_ref1.
-*
-*        CALL METHOD ls_ref1->check_changed_data.
-*
-*
-*        break e_ralarconj.
-*        "entro a botones
-*        CALL METHOD obj_alv_grid->refresh_table_display.
-*      WHEN 'CHANGE'.
-*        break e_ralarconj.
-*        "entro a botones
-*
-*      WHEN 'SAVE'.
-*        break e_ralarconj.
-*        "entro a botones
-*    ENDCASE.
+    CASE e_ucomm.
+      WHEN 'SEL_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = 'X'.
+        ENDLOOP.
+      WHEN 'DES_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = ''.
+        ENDLOOP.
+    ENDCASE.
+
+    CALL METHOD obj_alv_grid->refresh_table_display.
 
   ENDMETHOD.                    "handle_user_command
 
