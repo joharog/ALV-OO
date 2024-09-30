@@ -51,7 +51,6 @@ ENDCLASS.                    "cls_eventos DEFINITION
 CLASS cls_alv_oo IMPLEMENTATION.
 
   METHOD: get_data.
-
     SET SCREEN 0.
     REFRESH: gt_data.
     p_file = pfile.
@@ -62,7 +61,7 @@ CLASS cls_alv_oo IMPLEMENTATION.
         filename                = p_file
         i_begin_col             = 1
         i_begin_row             = 7
-        i_end_col               = 44
+        i_end_col               = 47
         i_end_row               = 9999
       TABLES
         intern                  = gt_excel
@@ -217,9 +216,15 @@ CLASS cls_alv_oo IMPLEMENTATION.
     APPEND wa_fcat TO it_fcat.
 
     CLEAR: wa_fcat.
-    wa_fcat-outputlen = '8'.
+    wa_fcat-outputlen = '9'.
     wa_fcat-fieldname = 'INCOTERMS1'.
-    wa_fcat-scrtext_l = 'Incoterms'.
+    wa_fcat-scrtext_l = 'Incoterms1'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '15'.
+    wa_fcat-fieldname = 'INCOTERMS2'.
+    wa_fcat-scrtext_l = 'Incoterms2'.
     APPEND wa_fcat TO it_fcat.
 
     CLEAR: wa_fcat.
@@ -284,7 +289,7 @@ CLASS cls_alv_oo IMPLEMENTATION.
 
     CLEAR: wa_fcat.
     wa_fcat-outputlen = '10'.
-    wa_fcat-fieldname = 'ITM_QUANTITY'.
+    wa_fcat-fieldname = 'PO_UNIT'.
     wa_fcat-scrtext_l = 'UM'.
     APPEND wa_fcat TO it_fcat.
 
@@ -347,6 +352,18 @@ CLASS cls_alv_oo IMPLEMENTATION.
     wa_fcat-outputlen = '12'.
     wa_fcat-fieldname = 'DELIVERY_DATE'.
     wa_fcat-scrtext_l = 'Fecha Entrega'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '15'.
+    wa_fcat-fieldname = 'PRICE_UNIT'.
+    wa_fcat-scrtext_l = 'Cantidad Base'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '12'.
+    wa_fcat-fieldname = 'AGREEMENT'.
+    wa_fcat-scrtext_l = 'Contrato'.
     APPEND wa_fcat TO it_fcat.
 
     CLEAR: wa_fcat.
@@ -460,53 +477,79 @@ CLASS cls_eventos IMPLEMENTATION.
 
   METHOD handle_toolbar.
 
-*    DATA: wa_button TYPE stb_button.
-*
-*    wa_button-function = 'UPDATE'.
-*    wa_button-icon     = icon_refresh.
-*    wa_button-text     = 'Actualizar'.
-*    wa_button-quickinfo = 'Actualizar Listado'.
-**    wa_button-disabled = space.
-*    APPEND wa_button TO e_object->mt_toolbar.
-*
-*    wa_button-function = 'CHANGE'.
-*    wa_button-icon     = icon_mass_change.
-*    wa_button-text     = 'Act. Masiva'.
-*    wa_button-quickinfo = 'Actualizacion Masiva'.
-*    APPEND wa_button TO e_object->mt_toolbar.
-*
-*    wa_button-function = 'SAVE'.
-*    wa_button-icon     = icon_system_save.
-*    wa_button-text     = 'Guardar'.
-*    wa_button-quickinfo = 'Guardar Cambios'.
-*    APPEND wa_button TO e_object->mt_toolbar.
+    DATA: ls_toolbar TYPE stb_button.
+
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'SEL_ALL' TO ls_toolbar-function.
+    MOVE icon_select_all TO ls_toolbar-icon.
+    MOVE 'Marcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 3. " !!!
+
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'DES_ALL' TO ls_toolbar-function.
+    MOVE icon_deselect_all TO ls_toolbar-icon.
+    MOVE 'Desmarcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 4. " !!!
+
+    CLEAR ls_toolbar.
+    MOVE 3 TO ls_toolbar-butn_type.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 5. " !!!
 
   ENDMETHOD.                    "handle_toolbar
 
   METHOD handle_user_command.
 
-    DATA: ls_ekpo  TYPE ekpo,
-          ls_t005t TYPE t005t,
-          ls_eket  TYPE eket,
-          ls_dlhd  TYPE wrf_pscd_dlhd.
-
-
     CASE e_ucomm.
-      WHEN 'UPDATE'.
-
-        DATA ls_ref1 TYPE REF TO cl_gui_alv_grid .
-
-        CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
-          IMPORTING
-            e_grid = ls_ref1.
-
-        CALL METHOD ls_ref1->check_changed_data.
-        CALL METHOD obj_alv_grid->refresh_table_display.
-
-      WHEN 'CHANGE'.
-      WHEN 'SAVE'.
-
+      WHEN 'SEL_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = 'X'.
+        ENDLOOP.
+      WHEN 'DES_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = ''.
+        ENDLOOP.
     ENDCASE.
+
+    CALL METHOD obj_alv_grid->refresh_table_display.
+
+*    DATA: ls_ekpo  TYPE ekpo,
+*          ls_t005t TYPE t005t,
+*          ls_eket  TYPE eket,
+*          ls_dlhd  TYPE wrf_pscd_dlhd.
+*
+*    CASE e_ucomm.
+*
+*      WHEN 'UPDATE'.
+*
+*        DATA ls_ref1 TYPE REF TO cl_gui_alv_grid .
+*
+*        CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+*          IMPORTING
+*            e_grid = ls_ref1.
+*
+*        CALL METHOD ls_ref1->check_changed_data.
+*
+*
+*        break e_ralarconj.
+*        "entro a botones
+*        CALL METHOD obj_alv_grid->refresh_table_display.
+*      WHEN 'CHANGE'.
+*        break e_ralarconj.
+*        "entro a botones
+*
+*      WHEN 'SAVE'.
+*        break e_ralarconj.
+*        "entro a botones
+*    ENDCASE.
+
   ENDMETHOD.                    "handle_user_command
 
 ENDCLASS.                    "cls_eventos IMPLEMENTATION
