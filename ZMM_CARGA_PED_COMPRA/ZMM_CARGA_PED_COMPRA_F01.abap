@@ -52,6 +52,13 @@ ENDFORM.                    "GET_FILENAME
 *----------------------------------------------------------------------*
 FORM carga_po.
 
+  DATA: resultado  TYPE esll-brtwr,
+        ref_exc    TYPE REF TO cx_root,
+        error      TYPE string,
+        flag_catch TYPE char1,
+        lv_catch   TYPE string.
+
+
   CALL METHOD obj_alv_grid->check_changed_data.
 
   DATA: data_tabix TYPE sy-tabix,
@@ -77,50 +84,6 @@ FORM carga_po.
     LOOP AT gt_data INTO gs_data WHERE select EQ 'X' AND ex_item NE 'X'.
 
       data_tabix = sy-tabix.
-
-      IF gs_data-po_item IS NOT INITIAL.
-
-
-*&---------------------------------------------------------------------*
-*&      START            I M P U T A C I O N
-*&---------------------------------------------------------------------*
-        LOOP AT lt_impt ASSIGNING <fs_impt> WHERE ex_impt NE 'X'.
-
-          IF gs_data-serial_no EQ 00.
-
-            EXIT.
-
-          ELSE.
-
-            IF sy-tabix EQ 1.
-
-              PERFORM fill_poaccount.
-              <fs_impt>-ex_impt = abap_true.
-              lv_imp = <fs_impt>-serial_no.
-
-            ELSE.
-
-              IF <fs_impt>-serial_no > lv_imp.
-
-                PERFORM fill_poaccount.
-                <fs_impt>-ex_impt = abap_true.
-                lv_imp = <fs_impt>-serial_no.
-
-              ELSE.
-                EXIT.
-              ENDIF.
-
-            ENDIF.
-
-          ENDIF.
-
-        ENDLOOP.
-*&---------------------------------------------------------------------*
-*&      END            I M P U T A C I O N
-*&---------------------------------------------------------------------*
-
-      ENDIF.
-
 
       "Validar que posicion inicie con 10.
       IF gs_data-po_item EQ 10 AND lv_pos IS INITIAL.
@@ -188,6 +151,11 @@ FORM carga_po.
           t_poheaderx-incoterms1 = 'X'.
         ENDIF.
 
+        IF gs_data-incoterms2 IS NOT INITIAL.
+          t_poheader-incoterms2  = gs_data-incoterms2.
+          t_poheaderx-incoterms2 = 'X'.
+        ENDIF.
+
         IF gs_data-retention_type IS NOT INITIAL.
           t_poheader-retention_type  = gs_data-retention_type.
           t_poheaderx-retention_type = 'X'.
@@ -221,6 +189,64 @@ FORM carga_po.
             <fs_data>-ex_item = abap_true.
             CLEAR: flag_p.
 
+
+            IF <fs_data>-po_item IS NOT INITIAL.
+*&---------------------------------------------------------------------*
+*&      START            I M P U T A C I O N
+*&---------------------------------------------------------------------*
+              LOOP AT lt_impt ASSIGNING <fs_impt> WHERE ex_impt NE 'X' AND ex_item NE 'X'.
+
+*                IF <fs_data>-po_item EQ <fs_impt>-po_item.
+                IF <fs_data>-po_item IS NOT INITIAL AND <fs_impt>-po_item IS NOT INITIAL.
+
+                  IF <fs_data>-serial_no EQ 00.
+
+                    EXIT.
+
+                  ELSE.
+
+                    IF sy-tabix EQ 1.
+
+                      PERFORM fill_poaccount.
+                      <fs_impt>-ex_impt = abap_true.
+                      IF <fs_data>-ex_item IS NOT INITIAL.
+                        <fs_impt>-ex_item = abap_true.
+                      ENDIF.
+
+*                      lv_imp = <fs_impt>-serial_no.
+
+                    ELSE.
+
+*                      IF <fs_impt>-serial_no > lv_imp.
+
+                      PERFORM fill_poaccount.
+                      <fs_impt>-ex_impt = abap_true.
+                      IF <fs_data>-ex_item IS NOT INITIAL.
+                        <fs_impt>-ex_item = abap_true.
+                      ENDIF.
+*                        lv_imp = <fs_impt>-serial_no.
+
+*                      ELSE.
+*                <fs_impt>-ex_impt = abap_true.
+*                        EXIT.
+*                      ENDIF.
+
+                    ENDIF.
+
+                  ENDIF.
+
+                ELSE.
+                  EXIT.
+                ENDIF.
+
+              ENDLOOP.
+*&---------------------------------------------------------------------*
+*&      END            I M P U T A C I O N
+*&---------------------------------------------------------------------*
+            ENDIF.
+
+
+
 *            PERFORM fill_poitem.
 *&---------------------------------------------------------------------*
 *&                  P O I T E M
@@ -250,10 +276,12 @@ FORM carga_po.
               w_poitem-material  = <fs_data>-material.
               w_poitemx-material = 'X'.
 
-              SELECT SINGLE meins INTO w_poitem-po_unit FROM mara WHERE matnr EQ w_poitem-material.
-              IF sy-subrc EQ 0.
-                w_poitemx-po_unit  = 'X'.
-              ENDIF.
+*              SELECT SINGLE meins INTO w_poitem-po_unit FROM mara WHERE matnr EQ w_poitem-material.
+*              IF sy-subrc EQ 0.
+*                w_poitemx-po_unit  = 'X'.
+*              ENDIF.
+              w_poitem-po_unit   = <fs_data>-po_unit.
+              w_poitemx-po_unit  = 'X'.
             ENDIF.
 
             IF <fs_data>-short_text IS NOT INITIAL.
@@ -264,11 +292,6 @@ FORM carga_po.
             IF <fs_data>-itm_quantity IS NOT INITIAL.
               w_poitem-quantity  = <fs_data>-itm_quantity.
               w_poitemx-quantity = 'X'.
-            ENDIF.
-
-            IF <fs_data>-po_unit IS NOT INITIAL.
-              w_poitem-po_unit  = <fs_data>-po_unit.
-              w_poitemx-po_unit = 'X'.
             ENDIF.
 
             IF <fs_data>-net_price IS NOT INITIAL.
@@ -306,10 +329,41 @@ FORM carga_po.
               w_poitemx-conf_ctrl = 'X'.
             ENDIF.
 
+            IF <fs_data>-agreement IS NOT INITIAL.
+
+              CALL FUNCTION 'BAPI_CONTRACT_GETDETAIL'
+                EXPORTING
+                  purchasingdocument = <fs_data>-agreement
+                  item_data          = 'X'
+                TABLES
+                  item               = t_citem.
+
+              IF sy-subrc EQ 0.
+                READ TABLE t_citem INTO w_citem WITH KEY material = <fs_data>-material.
+                IF sy-subrc EQ 0.
+                  w_poitem-agreement  = <fs_data>-agreement.
+                  w_poitem-agmt_item  = w_citem-item_no.
+                  w_poitemx-agreement = 'X'.
+                  w_poitemx-agmt_item = 'X'.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
+            IF <fs_data>-price_unit IS NOT INITIAL.
+              w_poitem-price_unit  = <fs_data>-price_unit.
+              w_poitemx-price_unit = 'X'.
+            ENDIF.
+
             IF <fs_data>-doc_type NE 'PSER' AND <fs_data>-doc_type NE 'SV'.
               APPEND w_poitem TO t_poitem.
               APPEND w_poitemx TO t_poitemx.
             ELSE.
+
+            IF <fs_data>-po_unit IS NOT INITIAL.
+              w_poitem-po_unit  = <fs_data>-po_unit.
+              w_poitemx-po_unit = 'X'.
+            ENDIF.
+
               w_poitem-pckg_no   = 0000000001.
               w_poitemx-pckg_no  = 'X'.
               w_poitemx-po_itemx = 'X'.
@@ -368,7 +422,6 @@ FORM carga_po.
         LOOP AT lt_serv ASSIGNING <fs_serv> WHERE select EQ 'X' AND ex_serv NE 'X'.
 
 
-
           serv_tabix = sy-tabix.
 
 *            IF item_tabix EQ serv_tabix.
@@ -425,6 +478,17 @@ FORM carga_po.
                 w_poservices-quantity   = <fs_serv>-srv_quantity.
                 w_poservices-base_uom   = <fs_serv>-base_uom.
                 w_poservices-gr_price   = <fs_serv>-gr_price.
+
+                TRY.
+                    resultado = w_poservices-gr_price * w_poservices-quantity.
+                  CATCH cx_sy_arithmetic_overflow INTO ref_exc.
+                    error = ref_exc->get_text( ).
+                    flag_catch = abap_true.
+                    lv_catch = 'Valor desbordado: Precio Neto = Cant.Servicio * Precio Bruto.'.
+                ENDTRY.
+
+
+
 
                 APPEND w_poservices TO t_poservices.
 *                  CLEAR w_poservices.
@@ -489,42 +553,85 @@ FORM carga_po.
 
       ELSE.
 
-        CALL FUNCTION 'BAPI_PO_CREATE1'
-          EXPORTING
-            poheader         = t_poheader
-            poheaderx        = t_poheaderx
-*          no_price_from_po = 'X'
-          TABLES
-            return            = t_return_bapi
-            poitem            = t_poitem
-            poitemx           = t_poitemx
-            poaccount         = t_poaccount
-            poaccountx        = t_poaccountx
-            poschedule        = t_poschedule
-            poschedulex       = t_poschedulex
-            poservices        = t_poservices
-            posrvaccessvalues = t_posrvaccessvalues.
 
+        IF flag_catch EQ abap_true.
+
+          LOOP AT gt_data ASSIGNING <fs_data> WHERE ex_item EQ 'X' AND log EQ ''.
+            MOVE lv_catch TO <fs_data>-log.
+            MOVE '' TO <fs_data>-select.
+            MOVE gc_red TO <fs_data>-status.
+            ls_stylerow-fieldname = 'SELECT'.
+            ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
+            IF <fs_data>-field_style IS INITIAL.
+              APPEND ls_stylerow  TO <fs_data>-field_style.
+            ENDIF.
+          ENDLOOP.
+
+          CLEAR: flag_catch, lv_catch.
+
+        ELSE.
+
+          CALL FUNCTION 'BAPI_PO_CREATE1'
+            EXPORTING
+              poheader         = t_poheader
+              poheaderx        = t_poheaderx
+*          no_price_from_po = 'X'
+            TABLES
+              return            = t_return_bapi
+              poitem            = t_poitem
+              poitemx           = t_poitemx
+              poaccount         = t_poaccount
+              poaccountx        = t_poaccountx
+              poschedule        = t_poschedule
+              poschedulex       = t_poschedulex
+              poservices        = t_poservices
+              posrvaccessvalues = t_posrvaccessvalues.
+
+        ENDIF.
 
         READ TABLE t_return_bapi INTO w_return_bapi  WITH KEY type = 'S' id = '06' number = '017'.
         IF sy-subrc EQ 0.
 
-          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-            EXPORTING
-              wait = 'X'.
+          COMMIT WORK AND WAIT.
+          CALL FUNCTION 'DEQUEUE_ALL'.
 
           LOOP AT gt_data ASSIGNING <fs_data> WHERE ex_item EQ 'X' AND log EQ ''.
-            <fs_data>-log = w_return_bapi-message.
+            MOVE w_return_bapi-message TO <fs_data>-log.
+            MOVE '' TO <fs_data>-select.
+            ls_stylerow-fieldname = 'SELECT'.
+            ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
+            IF <fs_data>-field_style IS INITIAL.
+              APPEND ls_stylerow  TO <fs_data>-field_style.
+            ENDIF.
+
           ENDLOOP.
 
           PERFORM clear_all.
 
         ELSE.
 
+          DATA: copy_return TYPE bapiret2.
+          DELETE t_return_bapi WHERE type NE 'E'.
+
           LOOP AT t_return_bapi INTO w_return_bapi WHERE type = 'E'.
+            MOVE-CORRESPONDING w_return_bapi TO copy_return.
 
             AT LAST.
-              <fs_data>-log = w_return_bapi-message.
+              LOOP AT gt_data ASSIGNING <fs_data> WHERE ex_item EQ 'X' AND log EQ ''.
+                MOVE copy_return-message TO <fs_data>-log.
+                MOVE '' TO <fs_data>-select.
+                MOVE gc_red TO <fs_data>-status.
+                ls_stylerow-fieldname = 'SELECT'.
+                ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
+                IF <fs_data>-field_style IS INITIAL.
+                  APPEND ls_stylerow  TO <fs_data>-field_style.
+                ENDIF.
+
+              ENDLOOP.
+              COMMIT WORK AND WAIT.
+              CALL FUNCTION 'DEQUEUE_ALL'.
+
+*              <fs_data>-log = copy_return-message.
             ENDAT.
 
 *            IF w_return_bapi-id EQ 'MEPO' AND w_return_bapi-number EQ 000 OR w_return_bapi-id EQ 'BAPI' AND w_return_bapi-number EQ 001.
@@ -563,10 +670,6 @@ FORM check_mdata.
         ls_mbew TYPE mbew.
 
   DATA:
-        lt_styletab TYPE lvc_t_styl,
-        ls_stylerow TYPE lvc_s_styl.
-
-  DATA:
         lv_tabix TYPE c.
 
   SELECT * FROM marc INTO TABLE lt_marc
@@ -590,7 +693,7 @@ FORM check_mdata.
 
     lv_tabix = sy-tabix.
 
-    IF <gfs_data>-doc_type EQ 'PSER'. "Servicio
+    IF <gfs_data>-doc_type EQ 'PSER' OR <gfs_data>-doc_type EQ 'SV'. "Servicio
 
       <gfs_data>-status = gc_green. "icon_green_light.
 
@@ -600,19 +703,19 @@ FORM check_mdata.
       IF sy-subrc EQ 0.
         <gfs_data>-status = gc_green. "icon_green_light.
 
-        READ TABLE lt_mard INTO ls_mard WITH KEY matnr = <gfs_data>-material werks = <gfs_data>-plant lgort = <gfs_data>-stge_loc.
-        IF sy-subrc EQ 0.
-          <gfs_data>-status = gc_green. "icon_green_light.
-        ELSE.
-          <gfs_data>-status = gc_red.
-          ls_stylerow-fieldname = 'SELECT'.
-          ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-          IF <gfs_data>-field_style IS INITIAL.
-            APPEND ls_stylerow  TO <gfs_data>-field_style.
-          ENDIF.
-          CONCATENATE 'Material' <gfs_data>-material 'no existe en almacen' <gfs_data>-stge_loc INTO <gfs_data>-log SEPARATED BY space.
-          CONTINUE.
-        ENDIF.
+*        READ TABLE lt_mard INTO ls_mard WITH KEY matnr = <gfs_data>-material werks = <gfs_data>-plant lgort = <gfs_data>-stge_loc.
+*        IF sy-subrc EQ 0.
+*          <gfs_data>-status = gc_green. "icon_green_light.
+*        ELSE.
+*          <gfs_data>-status = gc_red.
+*          ls_stylerow-fieldname = 'SELECT'.
+*          ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
+*          IF <gfs_data>-field_style IS INITIAL.
+*            APPEND ls_stylerow  TO <gfs_data>-field_style.
+*          ENDIF.
+*          CONCATENATE 'Material' <gfs_data>-material 'no existe en almacen' <gfs_data>-stge_loc INTO <gfs_data>-log SEPARATED BY space.
+*          CONTINUE.
+*        ENDIF.
 
       ELSE.
         <gfs_data>-status = gc_red.
@@ -678,67 +781,70 @@ FORM get_itab .
           WHEN 9.gs_data-exch_rate       = gs_excel-value.
           WHEN 10. gs_data-ex_rate_fx     = gs_excel-value.
           WHEN 11. gs_data-incoterms1     = gs_excel-value.
-          WHEN 12. gs_data-temp1          = gs_excel-value.
-          WHEN 13. gs_data-temp2          = gs_excel-value.
-          WHEN 14. gs_data-retention_type = gs_excel-value.
-          WHEN 15. gs_data-acctasscat     = gs_excel-value.
-          WHEN 16. gs_data-item_cat       = gs_excel-value.
-          WHEN 17. gs_data-po_item        = gs_excel-value.
-          WHEN 18. gs_data-matl_group     = gs_excel-value.
-          WHEN 19.
+          WHEN 12. gs_data-incoterms2     = gs_excel-value.
+          WHEN 13. gs_data-temp1          = gs_excel-value.
+          WHEN 14. gs_data-temp2          = gs_excel-value.
+          WHEN 15. gs_data-retention_type = gs_excel-value.
+          WHEN 16. gs_data-acctasscat     = gs_excel-value.
+          WHEN 17. gs_data-item_cat       = gs_excel-value.
+          WHEN 18. gs_data-po_item        = gs_excel-value.
+          WHEN 19. gs_data-matl_group     = gs_excel-value.
+          WHEN 20.
             CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
               EXPORTING
                 input  = gs_excel-value
               IMPORTING
                 output = gs_data-material.
-          WHEN 20. gs_data-short_text     = gs_excel-value.
-          WHEN 21. gs_data-itm_quantity   = gs_excel-value.
-          WHEN 22. gs_data-po_unit        = gs_excel-value.
-          WHEN 23. gs_data-net_price      = gs_excel-value.
-          WHEN 24. gs_data-plant          = gs_excel-value.
-          WHEN 25. gs_data-stge_loc       = gs_excel-value.
-          WHEN 26. gs_data-preq_name      = gs_excel-value.
-          WHEN 27. gs_data-qual_insp      = gs_excel-value.
-          WHEN 28. gs_data-tax_code       = gs_excel-value.
-          WHEN 29. gs_data-temp3          = gs_excel-value.
-          WHEN 30. gs_data-temp4          = gs_excel-value.
-          WHEN 31. gs_data-conf_ctrl      = gs_excel-value.
-          WHEN 32. gs_data-delivery_date = gs_excel-value.
+          WHEN 21. gs_data-short_text     = gs_excel-value.
+          WHEN 22. gs_data-itm_quantity   = gs_excel-value.
+          WHEN 23. gs_data-po_unit        = gs_excel-value.
+          WHEN 24. gs_data-net_price      = gs_excel-value.
+          WHEN 25. gs_data-plant          = gs_excel-value.
+          WHEN 26. gs_data-stge_loc       = gs_excel-value.
+          WHEN 27. gs_data-preq_name      = gs_excel-value.
+          WHEN 28. gs_data-qual_insp      = gs_excel-value.
+          WHEN 29. gs_data-tax_code       = gs_excel-value.
+          WHEN 30. gs_data-temp3          = gs_excel-value.
+          WHEN 31. gs_data-temp4          = gs_excel-value.
+          WHEN 32. gs_data-conf_ctrl      = gs_excel-value.
+          WHEN 33. gs_data-delivery_date  = gs_excel-value.
+          WHEN 34. gs_data-price_unit     = gs_excel-value.
+          WHEN 35. gs_data-agreement      = gs_excel-value.
 *            CALL FUNCTION 'CONVERSION_EXIT_PDATE_INPUT'
 *              EXPORTING
 *                input  = gs_excel-value
 *              IMPORTING
 *                output = gs_data-delivery_date.
-          WHEN 33. gs_data-ext_line       = gs_excel-value.
-          WHEN 34.
+          WHEN 36. gs_data-ext_line       = gs_excel-value.
+          WHEN 37.
             CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
               EXPORTING
                 input  = gs_excel-value
               IMPORTING
                 output = gs_data-service.
-          WHEN 35. gs_data-srv_quantity   = gs_excel-value.
-          WHEN 36. gs_data-base_uom       = gs_excel-value.
-          WHEN 37. gs_data-gr_price       = gs_excel-value.
+          WHEN 38. gs_data-srv_quantity   = gs_excel-value.
+          WHEN 39. gs_data-base_uom       = gs_excel-value.
+          WHEN 40. gs_data-gr_price       = gs_excel-value.
 *          WHEN 34.
 *            WRITE gs_excel-value TO lv_value.
 *            MOVE lv_value TO  gs_data-gr_price.
-          WHEN 38. gs_data-serial_no      = gs_excel-value.
-          WHEN 39. gs_data-distr_perc     = gs_excel-value.
-          WHEN 40. gs_data-part_inv       = gs_excel-value.
-          WHEN 41. gs_data-imp_quantity   = gs_excel-value.
-          WHEN 42.
+          WHEN 41. gs_data-serial_no      = gs_excel-value.
+          WHEN 42. gs_data-distr_perc     = gs_excel-value.
+          WHEN 43. gs_data-part_inv       = gs_excel-value.
+          WHEN 44. gs_data-imp_quantity   = gs_excel-value.
+          WHEN 45.
             CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
               EXPORTING
                 input  = gs_excel-value
               IMPORTING
                 output = gs_data-costcenter.
-          WHEN 43.
+          WHEN 46.
             CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
               EXPORTING
                 input  = gs_excel-value
               IMPORTING
                 output = gs_data-gl_account.
-          WHEN 44.
+          WHEN 47.
             CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
               EXPORTING
                 input  = gs_excel-value
@@ -864,6 +970,11 @@ FORM fill_poheader .
   IF gs_data-incoterms1 IS NOT INITIAL.
     t_poheader-incoterms1  = gs_data-incoterms1.
     t_poheaderx-incoterms1 = 'X'.
+  ENDIF.
+
+  IF gs_data-incoterms2 IS NOT INITIAL.
+    t_poheader-incoterms2  = gs_data-incoterms2.
+    t_poheaderx-incoterms2 = 'X'.
   ENDIF.
 
   IF gs_data-retention_type IS NOT INITIAL.
@@ -1025,23 +1136,38 @@ FORM fill_poaccount .
     w_poaccountx-po_item  = w_poaccountx-po_item.
   ENDIF.
 
-  w_poaccount-serial_no   = w_poaccount-serial_no + 1.
-  w_poaccountx-serial_no  = w_poaccountx-serial_no + 1.
+  IF w_poaccount-po_item IS NOT INITIAL.
+    w_poaccount-serial_no   = <fs_impt>-serial_no. "w_poaccount-serial_no + 1.
+    w_poaccountx-serial_no  = <fs_impt>-serial_no. "w_poaccountx-serial_no + 1.
+    w_poaccountx-serial_nox = 'X'.
+    w_poaccountx-po_itemx   = 'X'.
+  ENDIF.
 
-  w_poaccountx-po_itemx   = 'X'.
-  w_poaccountx-serial_nox = 'X'.
+  IF <fs_impt>-distr_perc IS NOT INITIAL.
+    w_poaccount-distr_perc = <fs_impt>-distr_perc.
+    w_poaccountx-distr_perc = 'X'.
+  ENDIF.
 
-  w_poaccount-distr_perc = <fs_impt>-distr_perc.
-  w_poaccountx-distr_perc = 'X'.
+  IF <fs_impt>-imp_quantity IS NOT INITIAL.
+    w_poaccount-quantity   = <fs_impt>-imp_quantity.
+    w_poaccountx-quantity   = 'X'.
+  ENDIF.
 
-  w_poaccount-quantity   = <fs_impt>-imp_quantity.
-  w_poaccountx-quantity   = 'X'.
+  IF <fs_impt>-costcenter IS NOT INITIAL.
+    w_poaccount-costcenter = <fs_impt>-costcenter.
+    w_poaccountx-costcenter = 'X'.
+  ENDIF.
 
-  w_poaccount-costcenter = <fs_impt>-costcenter.
-  w_poaccountx-costcenter = 'X'.
+  IF <fs_impt>-gl_account IS NOT INITIAL.
+    w_poaccount-gl_account = <fs_impt>-gl_account.
+    w_poaccountx-gl_account = 'X'.
+  ENDIF.
 
-  w_poaccount-gl_account = <fs_impt>-gl_account.
-  w_poaccountx-gl_account = 'X'.
+
+  IF <fs_impt>-orderid IS NOT INITIAL.
+    w_poaccount-orderid = <fs_impt>-orderid.
+    w_poaccountx-orderid = 'X'.
+  ENDIF.
 
   APPEND w_poaccount TO t_poaccount.
   APPEND w_poaccountx TO t_poaccountx.
