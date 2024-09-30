@@ -21,6 +21,7 @@ START-OF-SELECTION.
   CALL METHOD obj_alv_oo->show_alv.
   CALL SCREEN 0100.
 
+  CALL METHOD obj_alv_grid->refresh_table_display.
 *---------------------------------------------------------------------
 *           END  -  O F  -  S E L E C T I O N
 *---------------------------------------------------------------------
