@@ -1,326 +1,459 @@
 *&---------------------------------------------------------------------*
-*&  Include           ZMM_CARGA_STOCK_F01
+*&  Include           ZMM_CARGA_STOCK_CLS
 *&---------------------------------------------------------------------*
 
-*---------------------------------------------------------------------
-*            A T   S E L E C T I O N  -  S C R E E N
-*---------------------------------------------------------------------
-AT SELECTION-SCREEN ON VALUE-REQUEST FOR pfile.
-  PERFORM get_filename CHANGING pfile.
+*DATA: it_fcat      TYPE STANDARD TABLE OF lvc_s_fcat,
+*      wa_fcat      TYPE lvc_s_fcat,
+*      wa_layout    TYPE lvc_s_layo,
+*
+*      it_excluding TYPE STANDARD TABLE OF ui_func,
+*      wa_exclude   TYPE ui_func,
+*
+*      vg_container TYPE REF TO cl_gui_custom_container,
+*      obj_alv_grid TYPE REF TO cl_gui_alv_grid.
+*
+**----------------------------------------------------------------------*
+**               D E F I N I C I O N   C L A S E S
+**----------------------------------------------------------------------*
+*
+*CLASS: cls_alv_oo DEFINITION DEFERRED,
+*       cls_eventos DEFINITION DEFERRED.
+*
+*DATA: obj_alv_oo  TYPE REF TO cls_alv_oo,
+*      obj_eventos TYPE REF TO cls_eventos.
 
 *----------------------------------------------------------------------*
-*            SUB - RUTINAS
+*       CLASS cls_alv_oo DEFINITION
 *----------------------------------------------------------------------*
-FORM get_filename CHANGING pfile.
+*
+*----------------------------------------------------------------------*
+CLASS cls_alv_oo DEFINITION.
 
-  MOVE text-002 TO gs_title.
-  REFRESH gti_file_table[].
+  PUBLIC SECTION.
+    METHODS: get_data,
+             show_alv,
+             excluir_botones,
+             set_fieldcat,
+             set_layout.
 
-  CALL METHOD cl_gui_frontend_services=>file_open_dialog
-    EXPORTING
-      window_title            = gs_title
-      default_extension       = cl_gui_frontend_services=>filetype_excel
-      file_filter             = '*.XLS*'
-    CHANGING
-      file_table              = gti_file_table
-      rc                      = gi_rc
-    EXCEPTIONS
-      file_open_dialog_failed = 1
-      cntl_error              = 2
-      error_no_gui            = 3
-      not_supported_by_gui    = 4
-      OTHERS                  = 5.
-  IF sy-subrc EQ 0.
-    READ TABLE  gti_file_table INTO pfile INDEX 1.
-    IF sy-subrc EQ 0.
-      p_file = pfile.
-    ENDIF.
-  ELSE.
-    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+ENDCLASS.                    "cls_alv_oo DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS cls_eventos DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS cls_eventos DEFINITION.
+  PUBLIC SECTION.
+
+    METHODS:
+      handle_double_click FOR EVENT double_click OF cl_gui_alv_grid
+        IMPORTING e_row
+                  e_column
+                  es_row_no,
+
+      handle_toolbar FOR EVENT toolbar OF cl_gui_alv_grid
+        IMPORTING e_object
+                  e_interactive,
+
+      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid
+        IMPORTING e_ucomm.
+
+ENDCLASS.                    "cls_eventos DEFINITION
+
+
+*----------------------------------------------------------------------*
+*       CLASS cls_alv_oo IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS cls_alv_oo IMPLEMENTATION.
+
+  METHOD: get_data.
+
+    SET SCREEN 0.
+    REFRESH: gt_data.
+    p_file = pfile.
+
+* Upload data from Excel sheet to internal table.
+    CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+      EXPORTING
+        filename                = p_file
+        i_begin_col             = 1
+        i_begin_row             = 5
+        i_end_col               = 20
+        i_end_row               = 9999
+      TABLES
+        intern                  = gt_excel
+      EXCEPTIONS
+        inconsistent_parameters = 1
+        upload_ole              = 2
+        OTHERS                  = 3.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
             WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
-  ENDIF.
+    ENDIF.
 
-ENDFORM.                    "GET_FILENAME
-
-*&---------------------------------------------------------------------*
-*&      Form  GEN_PO
-*&---------------------------------------------------------------------*
-*       text
 *----------------------------------------------------------------------*
-*  -->  p1        text
-*  <--  p2        text
+*   Populate data to internal tables and structures
 *----------------------------------------------------------------------*
-FORM gen_po.
+    SORT gt_excel BY row col.
 
-  CALL METHOD obj_alv_grid->check_changed_data.
+    LOOP AT gt_excel INTO gs_excel.
+      CASE gs_excel-col.
+        WHEN 1.
+          CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+            EXPORTING
+              input  = gs_excel-value
+            IMPORTING
+              output = gs_data-material.
+        WHEN 2. gs_data-plant       = gs_excel-value.
+        WHEN 3. gs_data-stge_loc    = gs_excel-value.
+        WHEN 4. gs_data-move_type   = gs_excel-value.
+        WHEN 5. gs_data-val_type    = gs_excel-value.
+        WHEN 6. gs_data-batch       = gs_excel-value.
+        WHEN 7. gs_data-entry_qnt   = gs_excel-value.
+        WHEN 8. gs_data-entry_uom   = gs_excel-value.
+        WHEN 9. gs_data-amount_lc   = gs_excel-value.
+        WHEN 10. gs_data-waers      = gs_excel-value.
+*        WHEN 11. gs_data-vprsv      = gs_excel-value.  "Removido 15.08.2024
+*        WHEN 12. gs_data-mlast      = gs_excel-value.  "Removido 15.08.2024
+        WHEN 13. gs_data-header_txt = gs_excel-value.
+        WHEN 14. gs_data-stck_type  = gs_excel-value.
+        WHEN 15. gs_data-spec_stock = gs_excel-value.
+        WHEN 16.
+          CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+            EXPORTING
+              input  = gs_excel-value
+            IMPORTING
+              output = gs_data-vendor.
+        WHEN 17. gs_data-customer   = gs_excel-value.
+        WHEN 18. gs_data-sales_ord  = gs_excel-value.
+        WHEN 19.
+          CALL FUNCTION 'CONVERSION_EXIT_PDATE_INPUT'
+            EXPORTING
+              input  = gs_excel-value
+            IMPORTING
+              output = gs_data-doc_date.
+        WHEN 20.
+          CALL FUNCTION 'CONVERSION_EXIT_PDATE_INPUT'
+            EXPORTING
+              input  = gs_excel-value
+            IMPORTING
+              output = gs_data-pstng_date.
+      ENDCASE.
 
-* Structures for BAPI
-  DATA: gm_header  TYPE bapi2017_gm_head_01,
-        gm_code    TYPE bapi2017_gm_code,
-        gm_headret TYPE bapi2017_gm_head_ret,
-        gm_item    TYPE TABLE OF bapi2017_gm_item_create WITH HEADER LINE,
-        gm_return  TYPE bapiret2 OCCURS 0 WITH HEADER LINE,
-        gm_retmtd  TYPE bapi2017_gm_head_ret-mat_doc.
-
-  DATA: lv_tabix TYPE sy-tabix,
-        lv_count TYPE char10,
-        lv_log   TYPE string,
-        ls_mara  TYPE mara.
-
-  CLEAR: gm_return, gm_retmtd, lv_tabix, lv_count. REFRESH gm_return.
-
-  READ TABLE gt_data WITH KEY select = 'X' TRANSPORTING NO FIELDS.
-  IF sy-subrc EQ 4.
-
-    MESSAGE 'Debe selecionar al menos un registro' TYPE 'S' DISPLAY LIKE 'E'.
-
-  ELSE.
-    UNASSIGN <gfs_data>.
-    LOOP AT gt_data ASSIGNING <gfs_data> WHERE select EQ 'X' AND log IS INITIAL.
-
-*      Contador de posiciones selecionadas
-      IF lv_count IS INITIAL.
-        lv_count = 1.
-      ELSE.
-        <gfs_data>-sel_pos = lv_count = lv_count + 1.
-      ENDIF.
-
-
-
-
-*&---------------------------------------------------------------------*
-*&                  G O O D S M V T _ H E A D E R
-*&---------------------------------------------------------------------*
-      CLEAR: gm_header.
-      gm_header-pstng_date = <gfs_data>-pstng_date.
-      gm_header-doc_date   = <gfs_data>-doc_date.
-      gm_header-header_txt = <gfs_data>-header_txt.
-
-
-*&---------------------------------------------------------------------*
-*&                  G M _ C O D E
-*&---------------------------------------------------------------------*
-      gm_code-gm_code = pgmcode.
-
-
-*&---------------------------------------------------------------------*
-*&                  G O O D S M V T _ I T E M
-*&---------------------------------------------------------------------*
-      gm_item-material   = <gfs_data>-material.
-      gm_item-plant      = <gfs_data>-plant.
-      gm_item-stge_loc   = <gfs_data>-stge_loc.
-      gm_item-move_type  = <gfs_data>-move_type.
-      gm_item-val_type   = <gfs_data>-val_type.
-      gm_item-batch      = <gfs_data>-batch.
-      gm_item-entry_qnt  = <gfs_data>-entry_qnt.
-      gm_item-amount_lc  = <gfs_data>-amount_lc.
-      gm_item-stck_type  = <gfs_data>-stck_type.
-      gm_item-spec_stock = <gfs_data>-spec_stock.
-      gm_item-vendor     = <gfs_data>-vendor.
-      gm_item-customer   = <gfs_data>-customer.
-      gm_item-sales_ord  = <gfs_data>-sales_ord.
-
-      SELECT SINGLE * FROM mara
-        INTO ls_mara
-        WHERE matnr EQ gs_data-material.
-      IF sy-subrc EQ 0.
-
-        CALL FUNCTION 'CONVERSION_EXIT_CUNIT_INPUT'
-          EXPORTING
-            input    = ls_mara-meins
-            language = sy-langu
-          IMPORTING
-            output   = gm_item-entry_uom.
-      ENDIF.
-*      gm_item-entry_uom  = gs_data-entry_uom.
-
-      APPEND gm_item.
-      CLEAR: gm_item, gs_data.
+      AT END OF row.
+        APPEND gs_data TO gt_data.
+        CLEAR gs_data.
+      ENDAT.
 
     ENDLOOP.
 
-*&---------------------------------------------------------------------*
-*&                  E X E C U T E   B A P I
-*&---------------------------------------------------------------------*
+*----------------------------------------------------------------------*
+*   Check if exist in master data
+*----------------------------------------------------------------------*
+    PERFORM check_mdata.
 
-    CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
-      EXPORTING
-        goodsmvt_header  = gm_header
-        goodsmvt_code    = gm_code
-      IMPORTING
-        goodsmvt_headret = gm_headret
-        materialdocument = gm_retmtd
-      TABLES
-        goodsmvt_item    = gm_item
-        return           = gm_return.
+  ENDMETHOD.                    "get_data
 
-    CLEAR: lv_tabix, lv_log, lv_tabix.
-    IF NOT gm_retmtd IS INITIAL.
-      COMMIT WORK AND WAIT.
-      CALL FUNCTION 'DEQUEUE_ALL'.
+  METHOD: show_alv.
 
-      LOOP AT gt_data INTO gs_data WHERE select EQ 'X' AND log IS INITIAL.
-        lv_tabix = sy-tabix.
-        MOVE gm_retmtd TO gs_data-log.
-        MOVE '' TO gs_data-select.
-        ls_stylerow-fieldname = 'SELECT'.
-        ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-        IF gs_data-field_style IS INITIAL.
-          APPEND ls_stylerow  TO gs_data-field_style.
-        ENDIF.
-        MODIFY gt_data FROM gs_data INDEX lv_tabix.
-      ENDLOOP.
+    IF vg_container IS NOT BOUND.
 
+      CREATE OBJECT vg_container
+        EXPORTING
+          container_name = 'CC_ALV'.
+
+      CREATE OBJECT obj_alv_grid
+        EXPORTING
+          i_parent = vg_container.
+
+      CALL METHOD set_fieldcat.
+      CALL METHOD set_layout.
+      CALL METHOD excluir_botones.
+
+      CREATE OBJECT obj_eventos.
+      SET HANDLER obj_eventos->handle_double_click FOR obj_alv_grid.
+      SET HANDLER obj_eventos->handle_toolbar FOR obj_alv_grid.
+      SET HANDLER obj_eventos->handle_user_command FOR obj_alv_grid.
+
+      CALL METHOD obj_alv_grid->set_table_for_first_display
+        EXPORTING
+          it_toolbar_excluding = it_excluding
+          is_layout            = wa_layout
+        CHANGING
+          it_fieldcatalog      = it_fcat
+          it_outtab            = gt_data.
     ELSE.
+      CALL METHOD obj_alv_grid->refresh_table_display.
+    ENDIF.
 
-      LOOP AT gm_return WHERE type EQ 'E'.
+  ENDMETHOD.                    "show_alv
 
-        CONCATENATE gm_return-type ':' gm_return-id ':' gm_return-number ` ` gm_return-message INTO gs_data-log.
+  METHOD: excluir_botones.
 
-        MOVE '' TO gs_data-select.
-        gs_data-status = gc_red.
-        ls_stylerow-fieldname = 'SELECT'.
-        ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-        IF gs_data-field_style IS INITIAL.
-          APPEND ls_stylerow  TO gs_data-field_style.
-        ENDIF.
+    REFRESH it_excluding.
 
-        MODIFY gt_data FROM gs_data TRANSPORTING log status field_style WHERE select EQ 'X' AND sel_pos EQ gm_return-row.
-        CLEAR: gs_data-log, gs_data-select, gs_data-field_style.
+    wa_exclude = cl_gui_alv_grid=>mc_fc_info. "Atributo boton de informacion
+    APPEND wa_exclude TO it_excluding.
 
-      ENDLOOP.
+  ENDMETHOD.                    "excluir_botones
 
-*      LOOP AT gt_data INTO gs_data WHERE select EQ 'X' AND log IS INITIAL.
-*        lv_tabix = sy-tabix.
-*        MOVE lv_log TO gs_data-log.
-*        MOVE '' TO gs_data-select.
-*        gs_data-status = gc_red.
-*        ls_stylerow-fieldname = 'SELECT'.
-*        ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-*        IF gs_data-field_style IS INITIAL.
-*          APPEND ls_stylerow  TO gs_data-field_style.
+  METHOD: set_fieldcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '5'.
+    wa_fcat-fieldname = 'SELECT'.
+    wa_fcat-scrtext_s = 'Sel.'.
+    wa_fcat-scrtext_l = 'Seleccionar'.
+    wa_fcat-edit      = 'X'.
+    wa_fcat-checkbox  = 'X'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '7'.
+    wa_fcat-fieldname = 'STATUS'.
+    wa_fcat-scrtext_l = 'Status'.
+    wa_fcat-icon      = 'X'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '20'.
+    wa_fcat-fieldname = 'LOG'.
+    wa_fcat-scrtext_l = 'Log'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '18'.
+    wa_fcat-fieldname = 'MATERIAL'.
+    wa_fcat-scrtext_l = 'Material'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '6'.
+    wa_fcat-fieldname = 'PLANT'.
+    wa_fcat-scrtext_l = 'Centro'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '7'.
+    wa_fcat-fieldname = 'STGE_LOC'.
+    wa_fcat-scrtext_l = 'Almacén'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '7'.
+    wa_fcat-fieldname = 'MOVE_TYPE'.
+    wa_fcat-scrtext_s = 'Cl.Mvto.'.
+    wa_fcat-scrtext_l = 'Clase de Movimiento'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'VAL_TYPE'.
+    wa_fcat-scrtext_s = 'Cl.Val.'.
+    wa_fcat-scrtext_l = 'Clase de Valoración'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'BATCH'.
+    wa_fcat-scrtext_l = 'Lote'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '12'.
+    wa_fcat-fieldname = 'ENTRY_QNT'.
+    wa_fcat-scrtext_l = 'Cantidad'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '6'.
+    wa_fcat-fieldname = 'ENTRY_UOM'.
+    wa_fcat-scrtext_s = 'UM'.
+    wa_fcat-scrtext_l = 'Unidad de Medida'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '12'.
+    wa_fcat-fieldname = 'AMOUNT_LC'.
+    wa_fcat-scrtext_s = 'Impt.ML'.
+    wa_fcat-scrtext_l = 'Importe ML'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '7'.
+    wa_fcat-fieldname = 'WAERS'.
+    wa_fcat-scrtext_l = 'Moneda'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'VPRSV'.
+    wa_fcat-scrtext_l = 'Ctrol.precio'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'MLAST'.
+    wa_fcat-scrtext_l = 'Determ.precio'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '20'.
+    wa_fcat-fieldname = 'HEADER_TXT'.
+    wa_fcat-scrtext_l = 'Texto Cabecera Documento'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'STCK_TYPE'.
+    wa_fcat-scrtext_l = 'Tipo Stock'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'SPEC_STOCK'.
+    wa_fcat-scrtext_s = 'Ind. StockEsp.'.
+    wa_fcat-scrtext_l = 'Indicador Stock Especial'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '12'.
+    wa_fcat-fieldname = 'VENDOR'.
+    wa_fcat-scrtext_l = 'Proveedor'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '12'.
+    wa_fcat-fieldname = 'CUSTOMER'.
+    wa_fcat-scrtext_l = 'Cliente'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '8'.
+    wa_fcat-fieldname = 'RETENTION_TYPE'.
+    wa_fcat-scrtext_l = 'Retención'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'SALES_ORD'.
+    wa_fcat-scrtext_s = 'Ped.Venta'.
+    wa_fcat-scrtext_l = 'Pedido de Venta'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'DOC_DATE'.
+    wa_fcat-scrtext_s = 'F.Doc.'.
+    wa_fcat-scrtext_l = 'Fecha Documento'.
+    APPEND wa_fcat TO it_fcat.
+
+    CLEAR: wa_fcat.
+    wa_fcat-outputlen = '10'.
+    wa_fcat-fieldname = 'PSTNG_DATE'.
+    wa_fcat-scrtext_s = 'F.Contb.'.
+    wa_fcat-scrtext_l = 'Fecha Contabilización'.
+    APPEND wa_fcat TO it_fcat.
+
+  ENDMETHOD.                    "set_fieldcat
+
+  METHOD: set_layout.
+    wa_layout-stylefname = 'FIELD_STYLE'.
+    wa_layout-box_fname = 'SELECT'.
+  ENDMETHOD.                    "set_layout
+
+*  METHOD: mapping_bapi.
+*
+*    UNASSIGN <gfs_data>.
+*    LOOP AT gt_data ASSIGNING <gfs_data>.
+*
+*      WAIT up to 2 SECONDS.
+*
+*    ENDLOOP.
+*
+*  ENDMETHOD.                    "mapping_bapi
+
+ENDCLASS.                    "cls_alv_oo IMPLEMENTATION
+
+
+*----------------------------------------------------------------------*
+*       CLASS cls_eventos IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS cls_eventos IMPLEMENTATION.
+
+  METHOD handle_double_click.
+
+*    clear: ls_data.
+*
+*    CASE e_column.
+*    	WHEN 'LOG'.
+*        READ TABLE gt_data INDEX e_row-index INTO ls_data.
+*        IF sy-subrc eq 0.
+*
 *        ENDIF.
-*        MODIFY gt_data FROM gs_data INDEX lv_tabix.
-*      ENDLOOP.
+*
+*    	WHEN OTHERS.
+*    ENDCASE.
+*
+*    READ TABLE gt_data INDEX e_row-index INTO ls_sflight.
 
-      COMMIT WORK AND WAIT.
-      CALL FUNCTION 'DEQUEUE_ALL'.
-    ENDIF.
 
-    CLEAR: gm_header, gm_code, gm_headret, gm_retmtd, gm_item, gm_return.
-    REFRESH: gm_item, gm_return.
+*    break e_ralarconj.
+    "entro a doble click.
 
-  ENDIF.
+  ENDMETHOD.                    "handle_double_click
 
-  CALL METHOD obj_alv_grid->refresh_table_display.
+  METHOD handle_toolbar.
 
-ENDFORM.                    " GEN_PO
-*&---------------------------------------------------------------------*
-*&      Form  CHECK_MDATA
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-*  -->  p1        text
-*  <--  p2        text
-*----------------------------------------------------------------------*
-FORM check_mdata.
+    DATA: ls_toolbar TYPE stb_button.
 
-  DATA:
-        lt_marc TYPE TABLE OF marc,
-        ls_marc TYPE marc,
-        lt_mard TYPE TABLE OF mard,
-        ls_mard TYPE mard,
-        lt_mbew TYPE TABLE OF mbew,
-        ls_mbew TYPE mbew.
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'SEL_ALL' TO ls_toolbar-function.
+    MOVE icon_select_all TO ls_toolbar-icon.
+    MOVE 'Marcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 3. " !!!
 
-  DATA:
-        lv_tabix TYPE c.
+    CLEAR ls_toolbar.
+    MOVE 0 TO ls_toolbar-butn_type.
+    MOVE 'DES_ALL' TO ls_toolbar-function.
+    MOVE icon_deselect_all TO ls_toolbar-icon.
+    MOVE 'Desmarcar todo' TO ls_toolbar-quickinfo.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 4. " !!!
 
-  SELECT * FROM marc INTO TABLE lt_marc
-    FOR ALL ENTRIES IN gt_data
-      WHERE matnr EQ gt_data-material
-        AND werks EQ gt_data-plant.
+    CLEAR ls_toolbar.
+    MOVE 3 TO ls_toolbar-butn_type.
+    MOVE ' ' TO ls_toolbar-disabled.
+*    APPEND ls_toolbar TO e_object->mt_toolbar.
+    INSERT ls_toolbar INTO e_object->mt_toolbar INDEX 5. " !!!
 
-  SELECT * FROM mard INTO TABLE lt_mard
-    FOR ALL ENTRIES IN gt_data
-      WHERE matnr EQ gt_data-material
-        AND werks EQ gt_data-plant
-        AND lgort EQ gt_data-stge_loc.
 
-  SELECT * FROM mbew INTO TABLE lt_mbew
-    FOR ALL ENTRIES IN gt_data
-      WHERE matnr EQ gt_data-material
-        AND bwkey EQ gt_data-plant.
+  ENDMETHOD.                    "handle_toolbar
 
-  CLEAR: ls_stylerow.
-  REFRESH: lt_styletab.
+  METHOD handle_user_command.
 
-  LOOP AT gt_data ASSIGNING <gfs_data>.
+    CASE e_ucomm.
+      WHEN 'SEL_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = 'X'.
+        ENDLOOP.
+      WHEN 'DES_ALL'.
+        LOOP AT gt_data ASSIGNING <gfs_data> WHERE log IS INITIAL.
+          <gfs_data>-select = ''.
+        ENDLOOP.
+    ENDCASE.
 
-    lv_tabix = sy-tabix.
+    CALL METHOD obj_alv_grid->refresh_table_display.
 
-    READ TABLE lt_marc INTO ls_marc WITH KEY matnr = <gfs_data>-material werks = <gfs_data>-plant.
-    IF sy-subrc EQ 0.
-      <gfs_data>-status = gc_green. "icon_green_light.
+  ENDMETHOD.                    "handle_user_command
 
-      READ TABLE lt_mard INTO ls_mard WITH KEY matnr = <gfs_data>-material werks = <gfs_data>-plant lgort = <gfs_data>-stge_loc.
-      IF sy-subrc EQ 0.
-        <gfs_data>-status = gc_green. "icon_green_light.
-      ELSE.
-
-        IF <gfs_data>-spec_stock IS NOT INITIAL AND <gfs_data>-vendor IS NOT INITIAL.
-          <gfs_data>-status = gc_green.
-        ELSE.
-          <gfs_data>-status = gc_red.
-          ls_stylerow-fieldname = 'SELECT'.
-          ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-          IF <gfs_data>-field_style IS INITIAL.
-            APPEND ls_stylerow  TO <gfs_data>-field_style.
-          ENDIF.
-          CONCATENATE 'Material' <gfs_data>-material 'no existe en almacen' <gfs_data>-stge_loc INTO <gfs_data>-log SEPARATED BY space.
-          CONTINUE.
-        ENDIF.
-      ENDIF.
-
-    ELSE.
-      <gfs_data>-status = gc_red.
-      ls_stylerow-fieldname = 'SELECT'.
-      ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-      IF <gfs_data>-field_style IS INITIAL.
-        APPEND ls_stylerow  TO <gfs_data>-field_style.
-      ENDIF.
-      CONCATENATE 'Material' <gfs_data>-material 'no existe en centro' <gfs_data>-plant INTO <gfs_data>-log SEPARATED BY space.
-      CONTINUE.
-    ENDIF.
-
-*    Deshabilitar validacion para Control de Precios 15.08.2024
-*    READ TABLE lt_mbew INTO ls_mbew WITH KEY matnr = <gfs_data>-material bwkey = <gfs_data>-plant.
-*    IF ls_mbew-vprsv EQ <gfs_data>-vprsv.
-*      <gfs_data>-status = gc_green.
-*    ELSE.
-*      <gfs_data>-status = gc_red.
-*      ls_stylerow-fieldname = 'SELECT'.
-*      ls_stylerow-style = cl_gui_alv_grid=>mc_style_disabled.
-*      IF <gfs_data>-field_style IS INITIAL.
-*        APPEND ls_stylerow  TO <gfs_data>-field_style.
-*      ENDIF.
-*      CONCATENATE 'Material' <gfs_data>-material 'no coincide con el control de precio:' <gfs_data>-vprsv INTO <gfs_data>-log SEPARATED BY space.
-*      CONTINUE.
-*    ENDIF.
-
-*    Deshabilitar validacion para Determ.precio 15.08.2024
-*    IF ls_mbew-mlast EQ <gfs_data>-mlast.
-*      <gfs_data>-status = gc_green.
-*    ELSE.
-*      <gfs_data>-status = gc_red.
-*      ls_stylerow-fieldname = 'SELECT'.
-*      IF <gfs_data>-field_style IS INITIAL.
-*        APPEND ls_stylerow  TO <gfs_data>-field_style.
-*      ENDIF.
-*      CONCATENATE 'Material' <gfs_data>-material 'no coincide con la determinacion de precio:' <gfs_data>-mlast INTO <gfs_data>-log SEPARATED BY space.
-*      CONTINUE.
-*    ENDIF.
-
-  ENDLOOP.
-
-ENDFORM.                    " CHECK_MDATA
+ENDCLASS.                    "cls_eventos IMPLEMENTATION
